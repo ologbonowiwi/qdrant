@@ -2,7 +2,8 @@ use common::math::scaled_fast_sigmoid;
 use common::types::ScoreType;
 
 use super::{Query, TransformInto};
-use crate::data_types::vectors::{QueryVector, Vector};
+use crate::common::operation_error::OperationError;
+use crate::data_types::vectors::{QueryVector, Vector, VectorType};
 
 #[derive(Debug, Clone)]
 pub struct RecoQuery<T> {
@@ -71,6 +72,32 @@ fn merge_similarities(
 impl From<RecoQuery<Vector>> for QueryVector {
     fn from(query: RecoQuery<Vector>) -> Self {
         QueryVector::Recommend(query)
+    }
+}
+
+impl TryFrom<RecoQuery<Vector>> for RecoQuery<VectorType> {
+    type Error = OperationError;
+
+    fn try_from(query: RecoQuery<Vector>) -> Result<Self, Self::Error> {
+        let positives = query
+            .positives
+            .into_iter()
+            .map(|v| match v {
+                Vector::Dense(v) => Ok(v),
+                Vector::Sparse(_) => Err(OperationError::WrongSparse),
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let negatives = query
+            .negatives
+            .into_iter()
+            .map(|v| match v {
+                Vector::Dense(v) => Ok(v),
+                Vector::Sparse(_) => Err(OperationError::WrongSparse),
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(Self::new(positives, negatives))
     }
 }
 

@@ -7,7 +7,7 @@ use api::grpc::qdrant::quantization_config_diff::Quantization;
 use api::grpc::qdrant::update_collection_cluster_setup_request::Operation as ClusterOperationsPb;
 use itertools::Itertools;
 use segment::data_types::vectors::{
-    Named, NamedQuery, NamedVector, VectorStruct, VectorType, DEFAULT_VECTOR_NAME,
+    Named, NamedQuery, NamedVector, Vector, VectorStruct, VectorType, DEFAULT_VECTOR_NAME,
 };
 use segment::types::{Distance, QuantizationConfig};
 use segment::vector_storage::query::context_query::{ContextPair, ContextQuery};
@@ -583,6 +583,7 @@ impl TryFrom<api::grpc::qdrant::CollectionConfig> for CollectionConfig {
                             ),
                         },
                     },
+                    sparse_vectors: None, // TODO(ivan) grpc
                     shard_number: NonZeroU32::new(params.shard_number)
                         .ok_or_else(|| Status::invalid_argument("`shard_number` cannot be zero"))?,
                     on_disk_payload: params.on_disk_payload,
@@ -829,9 +830,10 @@ impl<'a> From<CollectionSearchRequest<'a>> for api::grpc::qdrant::SearchPoints {
     fn from(value: CollectionSearchRequest<'a>) -> Self {
         let (collection_id, request) = value.0;
 
+        let vector: VectorType = request.vector.get_vector().to_owned().try_into().unwrap(); // TODO: avoid unwrap Fuuuuuuuuuu
         Self {
             collection_name: collection_id,
-            vector: request.vector.get_vector().to_vec(),
+            vector,
             filter: request.filter.clone().map(|f| f.into()),
             limit: request.limit as u64,
             with_vectors: request.with_vector.clone().map(|wv| wv.into()),
@@ -851,11 +853,14 @@ impl<'a> From<CollectionSearchRequest<'a>> for api::grpc::qdrant::SearchPoints {
 impl From<QueryEnum> for api::grpc::qdrant::QueryEnum {
     fn from(value: QueryEnum) -> Self {
         match value {
-            QueryEnum::Nearest(vector) => api::grpc::qdrant::QueryEnum {
-                query: Some(api::grpc::qdrant::query_enum::Query::NearestNeighbors(
-                    vector.to_vector().into(),
-                )),
-            },
+            QueryEnum::Nearest(vector) => {
+                let v: VectorType = vector.to_vector().try_into().unwrap(); // TODO(ivan) Fuuuuuuuuuuu
+                api::grpc::qdrant::QueryEnum {
+                    query: Some(api::grpc::qdrant::query_enum::Query::NearestNeighbors(
+                        v.into(),
+                    )),
+                }
+            }
             QueryEnum::RecommendBestScore(named) => api::grpc::qdrant::QueryEnum {
                 query: Some(api::grpc::qdrant::query_enum::Query::RecommendBestScore(
                     api::grpc::qdrant::RecoQuery {
@@ -868,7 +873,8 @@ impl From<QueryEnum> for api::grpc::qdrant::QueryEnum {
                 query: Some(api::grpc::qdrant::query_enum::Query::Discover(
                     api::grpc::qdrant::DiscoveryQuery {
                         target: Some(api::grpc::qdrant::Vector {
-                            data: named.query.target,
+                            // TODO(sparse) wrong conversion
+                            data: named.query.target.try_into().unwrap(),
                         }),
                         context_pairs: named
                             .query
@@ -949,11 +955,11 @@ impl TryFrom<api::grpc::qdrant::WithLookup> for WithLookupInterface {
 
 fn try_context_pair_from_grpc(
     pair: api::grpc::qdrant::ContextPair,
-) -> Result<ContextPair<VectorType>, Status> {
+) -> Result<ContextPair<Vector>, Status> {
     match (pair.positive, pair.negative) {
         (Some(positive), Some(negative)) => Ok(ContextPair {
-            positive: positive.data,
-            negative: negative.data,
+            positive: positive.data.into(),
+            negative: negative.data.into(),
         }),
         _ => Err(Status::invalid_argument(
             "All context pairs must have both positive and negative parts",
@@ -983,8 +989,9 @@ impl TryFrom<api::grpc::qdrant::CoreSearchPoints> for CoreSearchRequest {
                     api::grpc::qdrant::query_enum::Query::RecommendBestScore(query) => {
                         QueryEnum::RecommendBestScore(NamedQuery {
                             query: RecoQuery::new(
-                                query.positives.into_iter().map(|v| v.data).collect(),
-                                query.negatives.into_iter().map(|v| v.data).collect(),
+                                // TODO(sparse) wrong conversion
+                                query.positives.into_iter().map(|v| v.data.into()).collect(),
+                                query.negatives.into_iter().map(|v| v.data.into()).collect(),
                             ),
                             using: value.vector_name,
                         })
@@ -1004,7 +1011,7 @@ impl TryFrom<api::grpc::qdrant::CoreSearchPoints> for CoreSearchRequest {
                             .try_collect()?;
 
                         QueryEnum::Discover(NamedQuery {
-                            query: DiscoveryQuery::new(target.data, pairs),
+                            query: DiscoveryQuery::new(target.data.into(), pairs),
                             using: value.vector_name,
                         })
                     }

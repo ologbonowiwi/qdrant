@@ -220,7 +220,7 @@ mod tests {
 
     use super::*;
     use crate::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
-    use crate::data_types::vectors::QueryVector;
+    use crate::data_types::vectors::{QueryVector, VectorElementType};
     use crate::fixtures::payload_context_fixture::FixtureIdTracker;
     use crate::id_tracker::IdTracker;
     use crate::types::{PointIdType, QuantizationConfig, ScalarQuantizationConfig};

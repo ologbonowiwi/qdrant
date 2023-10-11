@@ -3,7 +3,8 @@ use std::time::Duration;
 
 use itertools::Itertools;
 use segment::data_types::vectors::{
-    NamedQuery, NamedVector, VectorElementType, VectorType, DEFAULT_VECTOR_NAME,
+    NamedQuery, NamedVector, SparseNamedVector, Vector, VectorElementType, VectorRef, VectorType,
+    DEFAULT_VECTOR_NAME,
 };
 use segment::types::{
     Condition, ExtendedPointId, Filter, HasIdCondition, PointIdType, ScoredPoint,
@@ -20,19 +21,22 @@ use crate::operations::types::{
     UsingVector,
 };
 
-fn avg_vectors<'a>(
-    vectors: impl Iterator<Item = &'a Vec<VectorElementType>>,
-) -> Vec<VectorElementType> {
+fn avg_vectors<'a>(vectors: impl Iterator<Item = VectorRef<'a>>) -> Vector {
     let mut count: usize = 0;
-    let mut avg_vector: Vec<VectorElementType> = vec![];
+    let mut avg_vector: VectorType = Default::default();
     for vector in vectors {
-        count += 1;
-        for i in 0..vector.len() {
-            if i >= avg_vector.len() {
-                avg_vector.push(vector[i])
-            } else {
-                avg_vector[i] += vector[i];
+        match vector {
+            VectorRef::Dense(vector) => {
+                count += 1;
+                for i in 0..vector.len() {
+                    if i >= avg_vector.len() {
+                        avg_vector.push(vector[i])
+                    } else {
+                        avg_vector[i] += vector[i];
+                    }
+                }
             }
+            VectorRef::Sparse(_) => unimplemented!(), // TODO(ivan)
         }
     }
 
@@ -40,7 +44,21 @@ fn avg_vectors<'a>(
         *item /= count as VectorElementType;
     }
 
-    avg_vector
+    avg_vector.into()
+}
+
+fn merge_positive_and_negative_avg(positive: Vector, negative: Vector) -> Vector {
+    match (positive, negative) {
+        (Vector::Dense(positive), Vector::Dense(negative)) => {
+            let vector: VectorType = positive
+                .iter()
+                .zip(negative.iter())
+                .map(|(pos, neg)| pos + pos - neg)
+                .collect();
+            vector.into()
+        }
+        _ => unimplemented!(), // TODO(ivan)
+    }
 }
 
 pub async fn recommend_by<'a, F, Fut>(
@@ -290,8 +308,8 @@ fn batch_by_strategy(
 
 fn recommend_by_avg_vector<'a>(
     request: RecommendRequest,
-    positive: impl Iterator<Item = &'a VectorType>,
-    negative: impl Iterator<Item = &'a VectorType>,
+    positive: impl Iterator<Item = VectorRef<'a>>,
+    negative: impl Iterator<Item = VectorRef<'a>>,
     vector_name: &str,
     reference_vectors_ids: Vec<ExtendedPointId>,
 ) -> SearchRequest {
@@ -313,20 +331,22 @@ fn recommend_by_avg_vector<'a>(
         avg_positive
     } else {
         let avg_negative = avg_vectors(negative.into_iter());
-
-        avg_positive
-            .iter()
-            .zip(avg_negative.iter())
-            .map(|(pos, neg)| pos + pos - neg)
-            .collect()
+        merge_positive_and_negative_avg(avg_positive, avg_negative)
     };
 
     SearchRequest {
-        vector: NamedVector {
-            name: vector_name.to_string(),
-            vector: search_vector,
-        }
-        .into(),
+        vector: match search_vector {
+            Vector::Dense(vector) => NamedVector {
+                name: vector_name.to_string(),
+                vector,
+            }
+            .into(),
+            Vector::Sparse(vector) => SparseNamedVector {
+                name: vector_name.to_string(),
+                vector,
+            }
+            .into(),
+        },
         filter: Some(Filter {
             should: None,
             must: filter.clone().map(|filter| vec![Condition::Filter(filter)]),
@@ -345,12 +365,12 @@ fn recommend_by_avg_vector<'a>(
 
 fn recommend_by_best_score<'a>(
     request: &RecommendRequest,
-    positive: impl Iterator<Item = &'a VectorType>,
-    negative: impl Iterator<Item = &'a VectorType>,
+    positive: impl Iterator<Item = VectorRef<'a>>,
+    negative: impl Iterator<Item = VectorRef<'a>>,
     reference_vectors_ids: Vec<PointIdType>,
 ) -> CoreSearchRequest {
-    let positive = positive.cloned().collect();
-    let negative = negative.cloned().collect();
+    let positive = positive.map(|v| v.to_owned()).collect();
+    let negative = negative.map(|v| v.to_owned()).collect();
 
     let query = QueryEnum::RecommendBestScore(NamedQuery {
         query: RecoQuery::new(positive, negative),

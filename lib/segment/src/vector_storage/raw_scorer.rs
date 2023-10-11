@@ -7,7 +7,6 @@ use sparse::common::sparse_vector::SparseVector;
 use super::query::context_query::ContextQuery;
 use super::query::discovery_query::DiscoveryQuery;
 use super::query::reco_query::RecoQuery;
-use super::query::TransformInto;
 use super::query_scorer::custom_query_scorer::CustomQueryScorer;
 use super::{DenseVectorStorage, SparseVectorStorage, VectorStorageEnum};
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -200,13 +199,13 @@ fn new_scorer_with_metric<'a, TMetric: Metric + 'a, TVectorStorage: DenseVectorS
     let vec_deleted = vector_storage.deleted_vector_bitslice();
     match query {
         QueryVector::Nearest(vector) => raw_scorer_from_query_scorer(
-            MetricQueryScorer::<TMetric, _>::new(vector.into(), vector_storage),
+            MetricQueryScorer::<TMetric, _>::new(vector.try_into()?, vector_storage),
             point_deleted,
             vec_deleted,
             is_stopped,
         ),
         QueryVector::Recommend(reco_query) => {
-            let reco_query: RecoQuery<VectorType> = reco_query.transform_into();
+            let reco_query: RecoQuery<VectorType> = reco_query.try_into()?;
             raw_scorer_from_query_scorer(
                 CustomQueryScorer::<TMetric, _, _>::new(reco_query, vector_storage),
                 point_deleted,
@@ -215,7 +214,7 @@ fn new_scorer_with_metric<'a, TMetric: Metric + 'a, TVectorStorage: DenseVectorS
             )
         }
         QueryVector::Discovery(discovery_query) => {
-            let discovery_query: DiscoveryQuery<VectorType> = discovery_query.transform_into();
+            let discovery_query: DiscoveryQuery<VectorType> = discovery_query.try_into()?;
             raw_scorer_from_query_scorer(
                 CustomQueryScorer::<TMetric, _, _>::new(discovery_query, vector_storage),
                 point_deleted,
@@ -224,7 +223,7 @@ fn new_scorer_with_metric<'a, TMetric: Metric + 'a, TVectorStorage: DenseVectorS
             )
         }
         QueryVector::Context(context_query) => {
-            let context_query: ContextQuery<VectorType> = context_query.transform_into();
+            let context_query: ContextQuery<VectorType> = context_query.try_into()?;
             raw_scorer_from_query_scorer(
                 CustomQueryScorer::<TMetric, _, _>::new(context_query, vector_storage),
                 point_deleted,

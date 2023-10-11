@@ -5,7 +5,8 @@ use common::types::ScoreType;
 
 use super::context_query::ContextPair;
 use super::{Query, TransformInto};
-use crate::data_types::vectors::{QueryVector, Vector};
+use crate::common::operation_error::OperationError;
+use crate::data_types::vectors::{QueryVector, Vector, VectorType};
 
 type RankType = i32;
 
@@ -75,6 +76,20 @@ impl<T> Query<T> for DiscoveryQuery<T> {
 impl From<DiscoveryQuery<Vector>> for QueryVector {
     fn from(query: DiscoveryQuery<Vector>) -> Self {
         QueryVector::Discovery(query)
+    }
+}
+
+impl TryFrom<DiscoveryQuery<Vector>> for DiscoveryQuery<VectorType> {
+    type Error = OperationError;
+
+    fn try_from(query: DiscoveryQuery<Vector>) -> Result<Self, Self::Error> {
+        let target: VectorType = query.target.try_into()?;
+        let pairs = query
+            .pairs
+            .into_iter()
+            .map(|pair| pair.try_into())
+            .collect::<Result<_, _>>()?;
+        Ok(Self { target, pairs })
     }
 }
 

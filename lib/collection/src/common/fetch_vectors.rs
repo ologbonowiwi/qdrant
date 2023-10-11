@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use futures::future::try_join_all;
 use futures::Future;
-use segment::data_types::vectors::VectorType;
+use segment::data_types::vectors::VectorRef;
 use segment::types::{PointIdType, WithPayloadInterface, WithVector};
 use tokio::sync::RwLockReadGuard;
 
@@ -165,9 +165,9 @@ pub fn convert_to_vectors<'a>(
     all_vectors_records_map: &'a HashMap<PointRef, Record>,
     vector_name: &'a str,
     collection_name: Option<&'a String>,
-) -> impl Iterator<Item = &'a VectorType> + 'a {
+) -> impl Iterator<Item = VectorRef<'a>> + 'a {
     examples.filter_map(move |example| match example {
-        RecommendExample::Vector(vector) => Some(vector),
+        RecommendExample::Vector(vector) => Some(vector.as_slice().into()),
         RecommendExample::PointId(vid) => {
             let rec = all_vectors_records_map
                 .get(&PointRef {
@@ -177,5 +177,6 @@ pub fn convert_to_vectors<'a>(
                 .unwrap();
             rec.get_vector_by_name(vector_name)
         }
+        RecommendExample::Sparse(vector) => Some(vector.into()),
     })
 }
