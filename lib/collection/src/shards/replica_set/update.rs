@@ -69,7 +69,7 @@ impl ShardReplicaSet {
                                     .entry(leader_peer)
                                     .or_default();
 
-                                if sync_state.get_mut().retry() {
+                                if sync_state.get_mut().should_retry_now() {
                                         self.notify_peer_failure(leader_peer);
 
                                 }
@@ -316,7 +316,7 @@ impl ShardReplicaSet {
 
             let sync_state = locally_disabled_peers.entry(*peer_id).or_default();
 
-            if sync_state.get_mut().retry() {
+            if sync_state.get_mut().should_retry_now() {
                 self.notify_peer_failure(*peer_id);
             }
         }

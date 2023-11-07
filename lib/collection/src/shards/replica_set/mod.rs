@@ -646,7 +646,7 @@ impl ShardReplicaSet {
     /// And if so, report them to the consensus
     pub async fn sync_local_state(&self) -> CollectionResult<()> {
         for (failed_peer, sync_state) in self.locally_disabled_peers.read().iter() {
-            if sync_state.lock().retry() {
+            if sync_state.lock().should_retry_now() {
                 self.notify_peer_failure(*failed_peer);
             }
         }
@@ -811,7 +811,7 @@ impl Default for SyncState {
 }
 
 impl SyncState {
-    pub fn retry(&mut self) -> bool {
+    pub fn should_retry_now(&mut self) -> bool {
         let retry = self.last_attempt.elapsed() >= self.backoff;
 
         if retry {
